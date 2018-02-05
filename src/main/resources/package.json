@@ -1,0 +1,14 @@
+{
+  "private": true,
+  "main": "pcraft",
+  "version": "0.0.0",
+  "name": "minecraft-server",
+  "config": {
+    "locale": "zh-CN",
+    "debug": false
+  },
+  "dependencies": {
+    "babel-polyfill": "*",
+    "pcraft": "*"
+  }
+}

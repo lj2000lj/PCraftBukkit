@@ -1,40 +1,36 @@
 package cn.apisium.pcraft;
 
-import java.lang.reflect.Field;
+import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.concurrent.CountDownLatch;
 
 import javax.xml.ws.Holder;
 
-import org.bukkit.Bukkit;
+import com.eclipsesource.v8.*;
 import org.bukkit.event.Event;
-import org.bukkit.event.EventException;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.HandlerList;
 import org.bukkit.event.Listener;
-import org.bukkit.plugin.EventExecutor;
 import org.bukkit.plugin.RegisteredListener;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import com.eclipsesource.v8.JavaVoidCallback;
-import com.eclipsesource.v8.NodeJS;
-import com.eclipsesource.v8.V8;
-import com.eclipsesource.v8.V8Array;
-import com.eclipsesource.v8.V8Object;
-
-import cn.apisium.pcraft.variable.NonConfig;
-import cn.apisium.pcraft.variable.Variables;
 import io.alicorn.v8.V8JavaAdapter;
 
 public class Main extends JavaPlugin implements Listener {
-	NodeJS nodeRuntime = null;
-	V8 v8Runtime = null;
-	RegisteredListener registeredListener = new RegisteredListener(this, new EventExecutor() {
-		@Override
-		public void execute(Listener p0, Event p1) throws EventException {
-			Main.this.onFire(p1);
-		}
-	}, EventPriority.MONITOR, this, false);
+	private V8 v8Runtime = null;
+	private NodeJS nodeRuntime = null;
+	private V8Object app = null;
+	private final RegisteredListener registeredListener = new RegisteredListener(
+			this,
+			(listen, event) -> Main.this.onFire(event),
+			EventPriority.MONITOR,
+			this,
+			false
+	);
 
+	@Override
 	public void onLoad() {
 		nodeRuntime = NodeJS.createNodeJS();
 		v8Runtime = nodeRuntime.getRuntime();
@@ -45,104 +41,123 @@ public class Main extends JavaPlugin implements Listener {
 		for (HandlerList handler : HandlerList.getHandlerLists()) {
 			handler.unregister(registeredListener);
 		}
+
+		if (app != null) {
+			final V8Array args = new V8Array(this.v8Runtime);
+			final CountDownLatch latch = new CountDownLatch(1);
+			final Holder<Boolean> notified = new Holder<>(false);
+
+			V8Function cb = new V8Function(v8Runtime, (a, b) -> {
+				try { latch.countDown(); } catch (Throwable ignored) { }
+				notified.value = true;
+				return null;
+			});
+			args.push(cb);
+
+			app.executeVoidFunction("disable", args);
+			try {
+				latch.await();
+			} catch (InterruptedException e) {
+				e.printStackTrace();
+			}
+			cb.release();
+			args.release();
+
+			app.release();
+		}
+		this.getServer().getScheduler().cancelTasks(this);
 	}
 
 	@Override
 	public void onEnable() {
-		this.loadConfig().getServer().getPluginManager().registerEvents(this, this);
+		this.saveResource("setup-script.js", true);
 
-		this.insert("server", Bukkit.getServer(), v8Runtime);
+		final String config = this.getPackage();
+		if (config == null) return;
 
-		this.registerClass(Bukkit.class);
-		this.registerClass(PCraftHelper.class);
+		final V8Object obj = new V8Object(v8Runtime);
+		final V8Array args = new V8Array(v8Runtime);
 
-		v8Runtime.executeScript(
-				"emit = (event, callback) => event.getEventName() === 'PlayerJoinEvent' ? setTimeout(callback, 200000) : callback()");
+		V8JavaAdapter.injectObject("__server", this.getServer(), v8Runtime);
+		V8JavaAdapter.injectObject("__helpers", new PCraftHelper(), v8Runtime);
+
+		obj
+				.add("pkg", config)
+				.add("server", v8Runtime.getObject("__server"))
+				.add("helpers", v8Runtime.getObject("__helpers"));
+		args.push(obj);
+
+		v8Runtime.addUndefined("__server");
+		v8Runtime.addUndefined("__helpers");
+
+		final V8Object app = (V8Object) ((V8Function) nodeRuntime
+				.require(new File(this.getDataFolder(), "setup-script.js")))
+				.call(null, args);
+
+		if (app.isUndefined()) {
+			this.setEnabled(false);
+			return;
+		}
+
+		obj.release();
+		this.app = app;
+
+		for (HandlerList handler : HandlerList.getHandlerLists()) {
+			handler.register(registeredListener);
+		}
+		this.getServer().getScheduler().runTask(this, () -> {
+			while (nodeRuntime.isRunning()) nodeRuntime.handleMessage();
+		});
 	}
 
-	public void onFire(Event event) {
-		V8Array args = new V8Array(this.v8Runtime);
-		
-		this.insert("__event_" + event.hashCode(), event, v8Runtime);
-		
-		args.push(v8Runtime.getObject("__event_" + event.hashCode()));
-		
+	private void onFire(Event event) {
+		final V8Array args = new V8Array(this.v8Runtime);
+
 		final CountDownLatch latch = new CountDownLatch(1);
-		long t = System.nanoTime();
-		final Holder<Boolean> notifyed = new Holder<Boolean>(false);
-		args.registerJavaMethod(new JavaVoidCallback() {
+		final Holder<Boolean> notified = new Holder<>(false);
 
-			@Override
-			public void invoke(V8Object receiver, V8Array parameters) {
-				try {
-					latch.countDown();
-				} catch (Throwable e) {
-				}
-				notifyed.value = true;
+		final String id = "event_" + event.hashCode();
+		V8JavaAdapter.injectObject(id, event, v8Runtime);
 
-			}
-		}, "__notify");
-		args.push(args.getObject("__notify"));
-		v8Runtime.executeFunction("emit", args);
+		V8Function cb = new V8Function(v8Runtime, (a, b) -> {
+			try { latch.countDown(); } catch (Throwable ignored) { }
+			notified.value = true;
+			return null;
+		});
+		args.push(v8Runtime.getObject(id)).push(cb);
+
+		v8Runtime.addUndefined(id);
+
+		app.executeVoidFunction("emit", args);
 		try {
 			latch.await();
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		getLogger().info("" + (System.nanoTime() - t));
+		cb.release();
+		args.release();
 	}
 
-	public Main registerListener() {
-		for (HandlerList handler : HandlerList.getHandlerLists()) {
-			handler.register(registeredListener);
-		}
-		return this;
-	}
-
-	public Main registerClass(final Class<?> clazz) {
-		V8JavaAdapter.injectClass(clazz, v8Runtime);
-		return this;
-	}
-
-	public Main insert(String name, final Object obj, V8Object v8) {
-		V8JavaAdapter.injectObject(name, obj, v8);
-		return this;
-	}
-
-	public Main loadConfig() {
-		if (!this.getDataFolder().exists()) {
-			this.getDataFolder().mkdirs();
-		}
-		this.saveDefaultConfig();
-		Class<?> variables = Variables.class;
-		for (Field variable : variables.getDeclaredFields()) {
-			if (variable.isAnnotationPresent(NonConfig.class)) {
-				continue;
-			}
-			String path = capitalFirst(variable.getName());
-			try {
-				Object defaultValue = variable.get(null);
-				Object config = this.getConfig().get(path, null);
-				if (config != null)
-					variable.set(null, config);
-				else if (defaultValue != null)
-					this.getConfig().set(path, defaultValue);
-			} catch (IllegalArgumentException e) {
+	private String getPackage () {
+		Path pkg = Paths.get(System.getProperty("user.dir"), "package.json");
+		if (!pkg.toFile().isFile()) {
+			try (InputStream in = this.getResource("package.json")) {
+				final byte[] bytes = new byte[in.available()];
+				in.read(bytes);
+				Files.write(pkg, bytes);
+			} catch (Exception e) {
 				e.printStackTrace();
-			} catch (IllegalAccessException e) {
-				e.printStackTrace();
+				this.setEnabled(false);
+				return null;
 			}
 		}
-		this.saveConfig();
-		return this;
-	}
 
-	public String capitalFirst(String string) {
-		char[] cs = string.toCharArray();
-		if (Character.isLowerCase(cs[0])) {
-			cs[0] = Character.toUpperCase(cs[0]);
-			return String.valueOf(cs);
+		try {
+			return new String(Files.readAllBytes(pkg));
+		} catch (Exception e) {
+			e.printStackTrace();
+			this.setEnabled(false);
+			return null;
 		}
-		return string;
 	}
 }
