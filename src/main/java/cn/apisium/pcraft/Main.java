@@ -4,15 +4,9 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.concurrent.CountDownLatch;
-
-import javax.xml.ws.Holder;
 
 import com.eclipsesource.v8.*;
-import org.bukkit.event.Event;
-import org.bukkit.event.EventPriority;
-import org.bukkit.event.HandlerList;
-import org.bukkit.event.Listener;
+import org.bukkit.event.*;
 import org.bukkit.plugin.RegisteredListener;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -24,7 +18,7 @@ final public class Main extends JavaPlugin implements Listener {
 	private V8Object app = null;
 	private final RegisteredListener registeredListener = new RegisteredListener(
 			this,
-			(listen, event) -> Main.this.onFire(event),
+			(listen, event) -> this.onFire(event),
 			EventPriority.MONITOR,
 			this,
 			false
@@ -41,36 +35,16 @@ final public class Main extends JavaPlugin implements Listener {
 		for (HandlerList handler : HandlerList.getHandlerLists()) {
 			handler.unregister(registeredListener);
 		}
-
 		if (app != null) {
-			final V8Array args = new V8Array(this.v8Runtime);
-			final CountDownLatch latch = new CountDownLatch(1);
-			final Holder<Boolean> notified = new Holder<>(false);
-
-			V8Function cb = new V8Function(v8Runtime, (a, b) -> {
-				try { latch.countDown(); } catch (Throwable ignored) { }
-				notified.value = true;
-				return null;
-			});
-			args.push(cb);
-
-			app.executeVoidFunction("disable", args);
-			try {
-				latch.await();
-			} catch (InterruptedException e) {
-				e.printStackTrace();
-			}
-			cb.release();
-			args.release();
-
+			app.executeVoidFunction("disable", null);
 			app.release();
 		}
-		this.getServer().getScheduler().cancelTasks(this);
 	}
 
 	@Override
 	public void onEnable() {
 		this.getLogger().info("Loading...");
+
 		this.saveResource("setup-script.js", true);
 
 		final String config = this.getPackage();
@@ -103,39 +77,25 @@ final public class Main extends JavaPlugin implements Listener {
 
 		obj.release();
 		this.app = app;
-
 		for (HandlerList handler : HandlerList.getHandlerLists()) {
 			handler.register(registeredListener);
 		}
+		this.getServer().getPluginManager().registerEvents(this, this);
+
 		while (nodeRuntime.isRunning()) nodeRuntime.handleMessage();
 		this.getLogger().info("Loaded successful!");
 	}
 
-	private void onFire(Event event) {
+	private void onFire(Object event) {
 		final V8Array args = new V8Array(this.v8Runtime);
-
-		final CountDownLatch latch = new CountDownLatch(1);
-		final Holder<Boolean> notified = new Holder<>(false);
 
 		final String id = "event_" + event.hashCode();
 		V8JavaAdapter.injectObject(id, event, v8Runtime);
 
-		V8Function cb = new V8Function(v8Runtime, (a, b) -> {
-			try { latch.countDown(); } catch (Throwable ignored) { }
-			notified.value = true;
-			return null;
-		});
-		args.push(v8Runtime.getObject(id)).push(cb);
-
+		args.push(v8Runtime.getObject(id));
 		v8Runtime.addUndefined(id);
 
 		app.executeVoidFunction("emit", args);
-		try {
-			latch.await();
-		} catch (InterruptedException e) {
-			e.printStackTrace();
-		}
-		cb.release();
 		args.release();
 	}
 
