@@ -71,9 +71,9 @@ clean {
     delete "testserver/"
 }
 
-compileJava.dependsOn {
-    buildSpigot
-}
+//compileJava.dependsOn {
+//    buildSpigot
+//}
 
 jar {
     actions = []
@@ -93,33 +93,33 @@ task deploy(type: Copy, dependsOn: ['build']) {
     into "final/"
 }
 
-task setupDevServer(dependsOn: 'extractServerJar', type: Copy) {
-    from 'config/serverfiles'
-    into 'testserver'
-}
+//task setupDevServer(type: Copy) {
+//    from 'config/serverfiles'
+//    into 'testserver'
+//}
 
-task extractServerJar(type: Copy) {
-    from {
-        configurations.runtime
-    }
-    include("spigot-" + project.property("apiversion") + ".jar")
-    rename("spigot-" + project.property("apiversion") + ".jar", "server.jar")
-    into "testserver/"
-}
+//task extractServerJar(type: Copy) {
+//    from {
+//        configurations.runtime
+//    }
+//    include("spigot-" + project.property("apiversion") + ".jar")
+//    rename("spigot-" + project.property("apiversion") + ".jar", "server.jar")
+//    into "testserver/"
+//}
 
 task copyPluginToTestserver(dependsOn: ['build'], type: Copy) {
     from "${buildDir}/libs"
     into "testserver/plugins"
 }
 
-task prepareDevServer(dependsOn: ['buildSpigot', 'setupDevServer', 'copyPluginToTestserver']) {}
+//task prepareDevServer(dependsOn: ['buildSpigot', 'setupDevServer', 'copyPluginToTestserver']) {}
 
-task startDevServer(dependsOn: [prepareDevServer], type: JavaExec) {
-    classpath configurations.compile, configurations.runtime
-    main = "org.bukkit.craftbukkit.Main"
-    workingDir = "testserver/"
-    standardInput = System.in
-}
+//task startDevServer(dependsOn: [prepareDevServer], type: JavaExec) {
+//    classpath configurations.compile, configurations.runtime
+//    main = "org.bukkit.craftbukkit.Main"
+//    workingDir = "testserver/"
+//    standardInput = System.in
+//}
 
 // START Building Spigot and Bukkit
 

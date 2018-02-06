@@ -17,3 +17,5 @@
 # custom
 /testserver/
 /final/
+/*.bat
+node_modules
