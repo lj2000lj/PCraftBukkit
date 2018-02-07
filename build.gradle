@@ -35,12 +35,9 @@ idea {
 repositories {
     mavenLocal()
     mavenCentral()
-    maven {
-        url "http://repo.dmulloy2.net/content/groups/public"
-    }
-    maven {
-        url "http://ci.xephi.fr/plugin/repository/everything"
-    }
+    maven { url "http://repo.dmulloy2.net/content/groups/public" }
+    maven { url "http://ci.xephi.fr/plugin/repository/everything" }
+    maven { url 'https://www.jitpack.io' }
 }
 
 group = project.property("group")
@@ -50,6 +47,9 @@ sourceCompatibility = project.property("sourceversion")
 dependencies {
     compileOnly group: 'org.spigotmc', name: 'spigot-api', version: project.property("apiversion")
     compileOnly group: 'org.spigotmc', name: 'spigot', version: project.property("apiversion")
+    compileOnly(group: 'com.github.UnknownStudio', name: 'UDPLib', version: '1.1.1') {
+        exclude group: 'com.comphenix.protocol', module: 'ProtocolLib'
+    }
     compile group: 'io.alicorn.v8', name: 'v8-adapter', version: '1.41'
     compile group: 'com.eclipsesource.j2v8', name: 'j2v8_win32_x86_64', version: '4.6.0'
 }

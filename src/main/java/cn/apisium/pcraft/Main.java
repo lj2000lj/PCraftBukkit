@@ -16,13 +16,13 @@ final public class Main extends JavaPlugin implements Listener {
 	private V8 v8Runtime = null;
 	private NodeJS nodeRuntime = null;
 	private V8Object app = null;
-	private final RegisteredListener registeredListener = new RegisteredListener(
+	private final EventRegister register = new EventRegister(new RegisteredListener(
 			this,
 			(listen, event) -> this.onFire(event),
 			EventPriority.MONITOR,
 			this,
 			false
-	);
+	));
 
 	@Override
 	public void onLoad() {
@@ -32,9 +32,7 @@ final public class Main extends JavaPlugin implements Listener {
 
 	@Override
 	public void onDisable() {
-		for (HandlerList handler : HandlerList.getHandlerLists()) {
-			handler.unregister(registeredListener);
-		}
+		register.unRegisterAll();
 		if (app != null) {
 			app.executeVoidFunction("disable", null);
 			app.release();
@@ -61,6 +59,16 @@ final public class Main extends JavaPlugin implements Listener {
 				.add("pkg", config)
 				.add("server", v8Runtime.getObject("__server"))
 				.add("helpers", v8Runtime.getObject("__helpers"));
+		obj.registerJavaMethod((JavaVoidCallback) (a, b) -> {
+			int l = b.length();
+			for (int i = 0; i < l; i++) {
+				try {
+					register.register(b.getString(i));
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}, "register");
 		args.push(obj);
 
 		v8Runtime.addUndefined("__server");
@@ -76,11 +84,8 @@ final public class Main extends JavaPlugin implements Listener {
 		}
 
 		obj.release();
+		args.release();
 		this.app = app;
-		for (HandlerList handler : HandlerList.getHandlerLists()) {
-			handler.register(registeredListener);
-		}
-		this.getServer().getPluginManager().registerEvents(this, this);
 
 		while (nodeRuntime.isRunning()) nodeRuntime.handleMessage();
 		this.getLogger().info("Loaded successful!");
@@ -127,9 +132,7 @@ final public class Main extends JavaPlugin implements Listener {
 		Path pkg = Paths.get(System.getProperty("user.dir"), name);
 		if (!pkg.toFile().isFile()) {
 			try (InputStream in = this.getResource(name)) {
-				final byte[] bytes = new byte[in.available()];
-				in.read(bytes);
-				Files.write(pkg, bytes);
+				Files.copy(in, pkg);
 			} catch (Exception e) {
 				e.printStackTrace();
 				return false;
