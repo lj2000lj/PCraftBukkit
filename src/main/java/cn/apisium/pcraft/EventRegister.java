@@ -10,8 +10,8 @@ import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
-final public class EventRegister {
-    private String[] packageNames = new String[] {
+final class EventRegister {
+    private final static String[] packageNames = new String[] {
             "org.bukkit.event.block.",
             "org.bukkit.event.enchantment.",
             "org.bukkit.event.entity.",
@@ -23,8 +23,8 @@ final public class EventRegister {
             "org.bukkit.event.weather.",
             "org.bukkit.event.world."
     };
-    private List<HandlerList> registered = new ArrayList<>();
-    private List<String> registeredList = new ArrayList<>();
+    private final List<HandlerList> registered = new ArrayList<>();
+    private final List<String> registeredList = new ArrayList<>();
     private RegisteredListener handler;
 
     protected EventRegister (RegisteredListener handler) {
@@ -43,9 +43,9 @@ final public class EventRegister {
             throw new IllegalPluginAccessException("Woring EventName!");
         }
         if (registeredList.contains(name)) return;
-        Method method = find(name).getDeclaredMethod("getHandlerList", new Class[0]);
+        final Method method = find(name).getDeclaredMethod("getHandlerList", new Class[0]);
         method.setAccessible(true);
-        HandlerList h = ((HandlerList) method.invoke(null, new Object[0]));
+        final HandlerList h = ((HandlerList) method.invoke(null, new Object[0]));
         h.register(handler);
         registered.add(h);
         registeredList.add(name);

@@ -1,6 +1,7 @@
 # gradle
 /build/
 /.gradle/
+/classes
 
 # idea
 /.idea/

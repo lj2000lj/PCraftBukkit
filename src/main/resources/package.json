@@ -4,11 +4,24 @@
   "version": "0.0.0",
   "name": "minecraft-server",
   "config": {
-    "locale": "zh-CN",
-    "debug": false
+    "locale": "zh_CN",
+    "debug": false,
+    "detabase": {
+      "disable": false,
+      "type": "sqlite",
+      "database": "database.db",
+
+      "host": "localhost",
+      "port": 3306,
+      "username": "test",
+      "password": "test",
+      "synchronize": true,
+      "logging": false
+    }
   },
   "dependencies": {
     "babel-polyfill": "*",
-    "pcraft": "*"
+    "pcraft": "*",
+    "source-map-support": "*"
   }
 }

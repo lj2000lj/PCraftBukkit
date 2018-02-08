@@ -1,3 +1,4 @@
+'use strict'
 module.exports = opts => {
   opts.pkg = JSON.parse(opts.pkg)
   try {
@@ -8,6 +9,9 @@ module.exports = opts => {
   } catch (e) {
     Object.defineProperty(process.env, 'NODE_ENV', { value: 'production' })
   }
+  try {
+    require('source-map-support').install()
+  } catch (e) {}
   require('babel-polyfill')
   try {
     return require(opts.pkg.main || 'pcraft').__setup(opts)

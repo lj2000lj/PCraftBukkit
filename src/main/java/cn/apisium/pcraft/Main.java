@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 
 import com.eclipsesource.v8.*;
 import org.bukkit.event.*;
@@ -16,9 +17,24 @@ final public class Main extends JavaPlugin implements Listener {
 	private V8 v8Runtime = null;
 	private NodeJS nodeRuntime = null;
 	private V8Object app = null;
+	private Commander commander = null;
 	private final EventRegister register = new EventRegister(new RegisteredListener(
 			this,
-			(listen, event) -> this.onFire(event),
+			(listen, event) -> {
+				final V8Array args = new V8Array(v8Runtime);
+
+				final Object obj = new ObjectProxy(event);
+				final String id = "event_" + obj.hashCode();
+				V8JavaAdapter.injectObject(id, obj, v8Runtime);
+				V8Object o = v8Runtime.getObject(id);
+
+				args.push(o);
+				v8Runtime.addUndefined(id);
+
+				app.executeVoidFunction("emit", args);
+				o.release();
+				args.release();
+			},
 			EventPriority.MONITOR,
 			this,
 			false
@@ -33,6 +49,7 @@ final public class Main extends JavaPlugin implements Listener {
 	@Override
 	public void onDisable() {
 		register.unRegisterAll();
+		commander.unRegisterAll();
 		if (app != null) {
 			app.executeVoidFunction("disable", null);
 			app.release();
@@ -47,8 +64,22 @@ final public class Main extends JavaPlugin implements Listener {
 
 		final String config = this.getPackage();
 		if (config == null) return;
-		this.checkModules();
 
+		try {
+			this.commander = new Commander(v8Runtime, this);
+		} catch (Exception e) {
+			e.printStackTrace();
+			this.setEnabled(false);
+			return;
+		}
+
+		if (!this.checkModules().init(config)) return;
+
+		while (nodeRuntime.isRunning()) nodeRuntime.handleMessage();
+		this.getLogger().info("Loaded successful!");
+	}
+
+	private boolean init(String config) {
 		final V8Object obj = new V8Object(v8Runtime);
 		final V8Array args = new V8Array(v8Runtime);
 
@@ -60,17 +91,27 @@ final public class Main extends JavaPlugin implements Listener {
 				.add("server", v8Runtime.getObject("__server"))
 				.add("helpers", v8Runtime.getObject("__helpers"));
 		obj.registerJavaMethod((JavaVoidCallback) (a, b) -> {
-			int l = b.length();
-			for (int i = 0; i < l; i++) {
+			for (String name : b.getStrings(0, b.length())) {
 				try {
-					register.register(b.getString(i));
+					register.register(name);
 				} catch (Exception e) {
 					e.printStackTrace();
 				}
 			}
 		}, "register");
+		obj.registerJavaMethod((JavaVoidCallback) (a, b) -> {
+			V8Array arr = b.getArray(3);
+			V8Function fn = (V8Function) b.get(0);
+			commander.register(
+					fn,
+					b.getString(1),
+					b.getType(2) == V8Value.STRING ? b.getString(2) : null,
+					b.getType(2) == V8Value.UNDEFINED
+							? null : Arrays.asList(arr.getStrings(0, arr.length()))
+			);
+			arr.release();
+		}, "addCommand");
 		args.push(obj);
-
 		v8Runtime.addUndefined("__server");
 		v8Runtime.addUndefined("__helpers");
 
@@ -80,28 +121,13 @@ final public class Main extends JavaPlugin implements Listener {
 
 		if (app.isUndefined()) {
 			this.setEnabled(false);
-			return;
+			return false;
 		}
 
 		obj.release();
 		args.release();
 		this.app = app;
-
-		while (nodeRuntime.isRunning()) nodeRuntime.handleMessage();
-		this.getLogger().info("Loaded successful!");
-	}
-
-	private void onFire(Object event) {
-		final V8Array args = new V8Array(this.v8Runtime);
-
-		final String id = "event_" + event.hashCode();
-		V8JavaAdapter.injectObject(id, event, v8Runtime);
-
-		args.push(v8Runtime.getObject(id));
-		v8Runtime.addUndefined(id);
-
-		app.executeVoidFunction("emit", args);
-		args.release();
+		return true;
 	}
 
 	private String getPackage () {
@@ -121,11 +147,12 @@ final public class Main extends JavaPlugin implements Listener {
 		}
 	}
 
-	private void checkModules () {
+	private Main checkModules () {
 		if (!new File(System.getProperty("user.dir"), "node_modules/babel-polyfill")
 				.isDirectory() && !Installer.install()) {
 			this.getLogger().warning("Cannot to install all modules!");
 		}
+		return this;
 	}
 
 	private boolean write (String name) {
