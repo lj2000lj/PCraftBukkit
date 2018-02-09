@@ -3,7 +3,7 @@ package cn.apisium.pcraft;
 import org.bukkit.Bukkit;
 import org.bukkit.plugin.RegisteredServiceProvider;
 
-public class PCraftHelper {
+final class PCraftHelper {
 	public Class<?> getClassFromName(String name) {
 		try {
 			return Class.forName(name);

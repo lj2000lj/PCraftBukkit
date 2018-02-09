@@ -1,6 +1,7 @@
 # gradle
 /build/
 /.gradle/
+/classes
 
 # idea
 /.idea/
@@ -17,3 +18,5 @@
 # custom
 /testserver/
 /final/
+/*.bat
+node_modules
